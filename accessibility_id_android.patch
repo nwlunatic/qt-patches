@@ -24,32 +24,11 @@ index f0bf4a0..cf31498 100644
  
      static native boolean populateNode(int objectId, AccessibilityNodeInfo node);
  }
-diff --git a/qtbase/src/plugins/platforms/android/android.pro b/qtbase/src/plugins/platforms/android/android.pro
-index 3c3a4b4..7571f82 100644
---- a/qtbase/src/plugins/platforms/android/android.pro
-+++ b/qtbase/src/plugins/platforms/android/android.pro
-@@ -15,7 +15,7 @@ load(qt_plugin)
-     LIBS += -ljnigraphics -landroid
- }
- 
--QT += core-private gui-private platformsupport-private
-+QT += core-private qml-private gui-private platformsupport-private
- 
- CONFIG += qpa/genericunixfontdatabase
- 
 diff --git a/qtbase/src/plugins/platforms/android/androidjniaccessibility.cpp b/qtbase/src/plugins/platforms/android/androidjniaccessibility.cpp
-index 5c927da..8bef7a5 100644
+index 5c927da..433c8a3 100644
 --- a/qtbase/src/plugins/platforms/android/androidjniaccessibility.cpp
 +++ b/qtbase/src/plugins/platforms/android/androidjniaccessibility.cpp
-@@ -42,6 +42,7 @@
- #include "QtGui/qaccessible.h"
- #include <QtCore/qmath.h>
- #include <QtCore/private/qjnihelpers_p.h>
-+#include <QtQml>
- 
- #include "qdebug.h"
- 
-@@ -64,6 +65,7 @@ namespace QtAndroidAccessibility
+@@ -64,6 +64,7 @@ namespace QtAndroidAccessibility
      static jmethodID m_setScrollableMethodID = 0;
      static jmethodID m_setTextSelectionMethodID = 0;
      static jmethodID m_setVisibleToUserMethodID = 0;
@@ -57,7 +36,7 @@ index 5c927da..8bef7a5 100644
  
  
      static void setActive(JNIEnv */*env*/, jobject /*thiz*/, jboolean active)
-@@ -213,6 +215,34 @@ if (!clazz) { \
+@@ -213,6 +214,27 @@ if (!clazz) { \
          return descriptionForAccessibleObject_helper(env, iface);
      }
  
@@ -70,18 +49,11 @@ index 5c927da..8bef7a5 100644
 +            resourceId = object->objectName();
 +
 +	    if (resourceId.isEmpty()) {
-+	        QQmlEngine *engine = qmlEngine(object);
-+	        if (engine) {
-+                    QQmlContext *context = engine->contextForObject(object);
-+		    if (context) {
-+	                resourceId = context->nameForObject(object);
-+		    }
-+		}
++                resourceId = object->property("id").toString();
 +	    }
 +        }
 +        return env->NewString((jchar*) resourceId.constData(), (jsize) resourceId.size());
 +    }
-+
 +
 +    static jstring viewIdResourceForAccessibleObject(JNIEnv *env, jobject /*thiz*/, jint objectId)
 +    {
@@ -92,7 +64,7 @@ index 5c927da..8bef7a5 100644
      static bool populateNode(JNIEnv *env, jobject /*thiz*/, jint objectId, jobject node)
      {
          QAccessibleInterface *iface = interfaceFromId(objectId);
-@@ -278,6 +308,7 @@ if (!clazz) { \
+@@ -278,6 +300,7 @@ if (!clazz) { \
          {"clickAction", "(I)Z", (void*)clickAction},
          {"scrollForward", "(I)Z", (void*)scrollForward},
          {"scrollBackward", "(I)Z", (void*)scrollBackward},
@@ -100,7 +72,7 @@ index 5c927da..8bef7a5 100644
      };
  
  #define GET_AND_CHECK_STATIC_METHOD(VAR, CLASS, METHOD_NAME, METHOD_SIGNATURE) \
-@@ -312,6 +343,7 @@ if (!clazz) { \
+@@ -312,6 +335,7 @@ if (!clazz) { \
          GET_AND_CHECK_STATIC_METHOD(m_setFocusedMethodID, nodeInfoClass, "setFocused", "(Z)V");
          GET_AND_CHECK_STATIC_METHOD(m_setScrollableMethodID, nodeInfoClass, "setScrollable", "(Z)V");
          GET_AND_CHECK_STATIC_METHOD(m_setVisibleToUserMethodID, nodeInfoClass, "setVisibleToUser", "(Z)V");
@@ -108,3 +80,47 @@ index 5c927da..8bef7a5 100644
  
          if (QtAndroidPrivate::androidSdkVersion() >= 18) {
              GET_AND_CHECK_STATIC_METHOD(m_setTextSelectionMethodID, nodeInfoClass, "setTextSelection", "(II)V");
+diff --git a/qtdeclarative/src/quick/items/qquickitem.cpp b/qtdeclarative/src/quick/items/qquickitem.cpp
+index 2722f48..eb68380 100644
+--- a/qtdeclarative/src/quick/items/qquickitem.cpp
++++ b/qtdeclarative/src/quick/items/qquickitem.cpp
+@@ -3425,6 +3425,18 @@ QQmlListProperty<QObject> QQuickItemPrivate::data()
+                                              QQuickItemPrivate::data_clear);
+ }
+ 
++QString QQuickItem::id() const
++{
++    QQuickItem *item = const_cast<QQuickItem *>(this);
++    QQmlEngine *engine = qmlEngine(item);
++    if (engine) {
++        QQmlContext *context = engine->contextForObject(item);
++        if (context)
++            return context->nameForObject(item);
++    }
++    return QString();
++}
++
+ /*!
+     \qmlpropertygroup QtQuick::Item::childrenRect
+     \qmlproperty real QtQuick::Item::childrenRect.x
+diff --git a/qtdeclarative/src/quick/items/qquickitem.h b/qtdeclarative/src/quick/items/qquickitem.h
+index c17f6a6..62783da 100644
+--- a/qtdeclarative/src/quick/items/qquickitem.h
++++ b/qtdeclarative/src/quick/items/qquickitem.h
+@@ -97,6 +97,8 @@ class Q_QUICK_EXPORT QQuickItem : public QObject, public QQmlParserStatus
+     Q_PRIVATE_PROPERTY(QQuickItem::d_func(), QQmlListProperty<QObject> resources READ resources DESIGNABLE false)
+     Q_PRIVATE_PROPERTY(QQuickItem::d_func(), QQmlListProperty<QQuickItem> children READ children NOTIFY childrenChanged DESIGNABLE false)
+ 
++    Q_PROPERTY(QString id READ id)
++
+     Q_PROPERTY(qreal x READ x WRITE setX NOTIFY xChanged FINAL)
+     Q_PROPERTY(qreal y READ y WRITE setY NOTIFY yChanged FINAL)
+     Q_PROPERTY(qreal z READ z WRITE setZ NOTIFY zChanged FINAL)
+@@ -200,6 +202,7 @@ public:
+     QRectF childrenRect();
+     QList<QQuickItem *> childItems() const;
+ 
++    QString id() const;
+     bool clip() const;
+     void setClip(bool);
+ 
